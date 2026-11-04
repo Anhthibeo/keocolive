@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Điều khiển Kéo co Live</title>
+<style>
+:root{--bg:#120d2e;--panel:#1d1745;--ink:#fff8ea;--mute:#b4aad9;--red:#ff4d5e;--blue:#22d6e6;--gold:#ffd23f}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:system-ui,'Segoe UI',sans-serif;padding:16px;max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+h1{font-size:20px}h2{font-size:14px;color:var(--gold);margin-bottom:8px}
+.card{background:var(--panel);border-radius:14px;padding:12px}
+.row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.row>*{flex:1;min-width:90px}
+button,select,input{padding:9px 10px;border-radius:9px;border:0;font:600 13px system-ui;color:var(--ink);background:#3a3470;cursor:pointer}
+input{width:100%;cursor:text;border:1px solid #4a4380;background:var(--bg)}
+button:hover{background:#4d4592}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--gold)}
+button.r{background:#c2243f}button.b{background:#0b7f95}button.g{background:#9a6b00}
+#st{font-weight:700;margin-top:6px}.ok{color:var(--blue)}.no{color:var(--mute)}
+.stat{display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:14px}.stat div{background:#ffffff12;border-radius:9px;padding:6px 10px}
+.stat b{color:var(--gold)}
+.bar{height:14px;border-radius:7px;background:var(--blue);overflow:hidden;margin-top:8px}.bar i{display:block;height:100%;width:50%;background:var(--red);transition:width .3s}
+</style>
+</head>
+<body>
+<h1>🎮 Điều khiển Kéo co Live</h1>
+<p style="color:var(--mute);font-size:13px">Trang này chỉ dành cho bạn, người xem không thấy. Cần chạy <code>server.js</code> và mở trang game.</p>
+
+<div class="card"><h2>Kết nối</h2>
+  <input id="url" value="ws://localhost:8080" aria-label="Địa chỉ WebSocket">
+  <div class="row"><button id="conn">Kết nối lại</button></div>
+  <div id="st" class="no">Chưa kết nối</div>
+</div>
+
+<div class="card"><h2>Tình hình trò chơi</h2>
+  <div class="stat">
+    <div>Ván: <b id="sr">-</b></div><div>Trạng thái: <b id="so">-</b></div>
+    <div>🔥 Đỏ: <b id="sn1">0</b> người · thắng <b id="sw1">0</b></div><div>❄️ Xanh: <b id="sn2">0</b> người · thắng <b id="sw2">0</b></div>
+    <div>Sự kiện: <b id="se">-</b></div><div>Âm thanh: <b id="ss">-</b></div>
+  </div>
+  <div class="bar"><i id="sb"></i></div>
+  <p id="sk" style="margin-top:8px;font-size:13px;color:var(--gold)"></p>
+</div>
+
+<div class="card"><h2>Điều khiển ván</h2>
+  <div class="row"><button data-c='{"cmd":"reset"}'>🔄 Ván mới ngay</button></div>
+  <div class="row"><button class="r" data-c='{"cmd":"win","t":"r"}'>Đỏ thắng ngay</button><button class="b" data-c='{"cmd":"win","t":"b"}'>Xanh thắng ngay</button></div>
+</div>
+
+<div class="card"><h2>Kích hoạt sự kiện</h2>
+  <div class="row"><button class="g" data-c='{"cmd":"event","k":"gold"}'>⭐ Giờ Vàng</button><button class="g" data-c='{"cmd":"event","k":"heart"}'>❤️ Mưa Tim</button><button class="g" data-c='{"cmd":"event","k":"shield"}'>🛡️ Khiên</button></div>
+  <div class="row"><button id="snd">🔊 Bật/tắt âm thanh</button></div>
+</div>
+
+<div class="card"><h2>Chạy thử (không cần live)</h2>
+  <div class="row"><button class="r" id="j1">+1 người Đỏ</button><button class="b" id="j2">+1 người Xanh</button></div>
+  <div class="row"><button class="r" id="l1">Tim Đỏ</button><button class="b" id="l2">Tim Xanh</button></div>
+  <div class="row"><select id="gv" aria-label="Giá trị quà"><option value="1">Quà 1 💎</option><option value="10" selected>Quà 10 💎</option><option value="50">Quà 50 💎</option><option value="200">Quà 200 💎</option><option value="1000">Quà 1000 💎</option></select></div>
+  <div class="row"><button class="r" id="g1">Quà Đỏ</button><button class="b" id="g2">Quà Xanh</button></div>
+  <div class="row"><button data-c='{"cmd":"auto"}'>🤖 Bật/tắt tự động chạy thử</button></div>
+</div>
+
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)},ws=null,sndOn=true;
+var EVN={gold:'Giờ Vàng',heart:'Mưa Tim',shield:'Khiên cứu thua'};
+function setSt(t,ok){$('st').textContent=t;$('st').className=ok?'ok':'no'}
+function send(o){if(ws&&ws.readyState===1){ws.send(JSON.stringify(o));return true}setSt('Chưa kết nối, lệnh chưa gửi được',false);return false}
+function connect(){
+  var me;try{me=ws=new WebSocket($('url').value)}catch(e){setSt('Địa chỉ không hợp lệ',false);return}
+  me.onopen=function(){setSt('Đã kết nối tới server',true)};
+  me.onmessage=function(m){try{var d=JSON.parse(m.data);if(d.type==='state')show(d)}catch(x){}};
+  me.onclose=function(){if(me!==ws)return;setSt('Mất kết nối, đang thử lại…',false);setTimeout(function(){if(me===ws)connect()},2500)};
+}
+function show(d){
+  $('sr').textContent=d.round;$('so').textContent=d.over?'Đang hiện màn hình chiến thắng':'Đang chơi';
+  $('sn1').textContent=d.nr;$('sn2').textContent=d.nb;$('sw1').textContent=d.wins.r;$('sw2').textContent=d.wins.b;
+  $('se').textContent=d.ev?EVN[d.ev]:'Không có';$('ss').textContent=d.snd?'Bật':'Tắt';sndOn=d.snd;
+  $('sb').style.width=(50-d.pos/2)+'%';$('sk').textContent=d.king||'';
+}
+$('conn').onclick=function(){if(ws){var o=ws;ws=null;try{o.close()}catch(x){}}connect()};
+document.querySelectorAll('[data-c]').forEach(function(b){b.onclick=function(){send(JSON.parse(b.dataset.c))}});
+$('snd').onclick=function(){send({cmd:'sound',type:'cmd',on:!sndOn})};
+// gửi kèm type:'cmd' cho mọi lệnh
+var _send=send;send=function(o){if(!o.type)o.type='cmd';return _send(o)};
+function nm(){return 'Khach'+Math.floor(Math.random()*900+100)}
+function sim(ev){send({cmd:'sim',ev:ev})}
+$('j1').onclick=function(){var u=nm();sim([{type:'chat',user:u,comment:'1'},{type:'chat',user:u,comment:'cố lên'}])};
+$('j2').onclick=function(){var u=nm();sim([{type:'chat',user:u,comment:'2'},{type:'chat',user:u,comment:'cố lên'}])};
+$('l1').onclick=function(){sim([{type:'chat',user:'sim_do',comment:'1'},{type:'like',user:'sim_do',count:20}])};
+$('l2').onclick=function(){sim([{type:'chat',user:'sim_xanh',comment:'2'},{type:'like',user:'sim_xanh',count:20}])};
+$('g1').onclick=function(){sim([{type:'chat',user:'sim_do',comment:'1'},{type:'gift',user:'sim_do',name:'Quà thử',diamonds:+$('gv').value}])};
+$('g2').onclick=function(){sim([{type:'chat',user:'sim_xanh',comment:'2'},{type:'gift',user:'sim_xanh',name:'Quà thử',diamonds:+$('gv').value}])};
+connect();
+})();
+</script>
+</body>
+</html>
